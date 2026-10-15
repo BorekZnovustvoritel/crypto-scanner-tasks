@@ -27,6 +27,8 @@ Include one flavor of this task by editing your pipeline (`.tekton/<component na
         value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
       - name: CACHI2_ARTIFACT
         value: $(tasks.prefetch-dependencies.results.CACHI2_ARTIFACT)
+      runAfter:
+      - build-image-index
       taskRef:
         resolver: bundles
         params:
