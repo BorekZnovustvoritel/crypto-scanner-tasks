@@ -42,6 +42,8 @@ spec:
       type: string
       default: ""
   results:
+    - name: CBOM_BLOB_URL
+      description: Digest-qualified reference to the attached cbom.json blob. Empty when upload is skipped.
     - name: TEST_OUTPUT
       description: Tekton task test output.
   volumes:
@@ -298,6 +300,8 @@ spec:
         #!/usr/bin/env bash
         set -euo pipefail
 
+        : > "$(results.CBOM_BLOB_URL.path)"
+
         if [ -z "${IMAGE_URL}" ] || [ -z "${IMAGE_DIGEST}" ]; then
           echo 'No image-url or image-digest param provided. Skipping upload.'
           exit 0
@@ -325,10 +329,19 @@ spec:
           echo "Selecting auth"
           select-oci-auth "$IMAGE_URL" >"$HOME/auth.json"
           echo "Attaching to ${IMAGE_URL}"
-          if ! retry oras attach --no-tty --registry-config "$HOME/auth.json" --artifact-type "${MEDIA_TYPE}" "${IMAGE_URL}@${IMAGE_DIGEST}" "${UPLOAD_FILE}:${MEDIA_TYPE}"; then
+          if ! CBOM_REFERENCE=$(retry oras attach --no-tty --registry-config "$HOME/auth.json" \
+            --artifact-type "${MEDIA_TYPE}" \
+            --format go-template --template '{{.reference}}' \
+            "${IMAGE_URL}@${IMAGE_DIGEST}" "${UPLOAD_FILE}:${MEDIA_TYPE}"); then
             echo "Failed to attach ${UPLOAD_FILE} to ${IMAGE_URL}"
             exit 1
           fi
+
+          # Replace the attachment manifest digest with the attached file's blob digest.
+          retry oras manifest fetch --registry-config "$HOME/auth.json" \
+            --format go-template \
+            --template '{{ replace .digest (index .content.layers 0).digest .reference }}' \
+            "${CBOM_REFERENCE}" > "$(results.CBOM_BLOB_URL.path)"
         done
         echo "Task $(context.task.name) completed."
       computeResources:
